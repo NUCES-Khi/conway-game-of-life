@@ -7,34 +7,70 @@
  * @date       2023
  */
 
-#include <sys/mman.h>
-#include <fcntl.h>
-#include <semaphore.h>
-#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/wait.h>
+#include <pthread.h>
 
-// This function prints the board
-// take board , rows and columns as arguments
-void print_board(int board[][10], int rows, int cols) {
-    for (int i = 0; i < rows; i++) {
-        for (int j = 0; j < cols; j++) {
+#define NUM_THREADS 4
+#define CHUNK_SIZE 25
+int ROWS  = 10;
+int COLS =  10;
+int matrix[][10] = {
+    {0, 0, 1, 1, 0, 0, 0, 1, 1, 1},
+    {0, 0, 0, 1, 0, 0, 0, 1, 0, 0},
+    {1, 1, 1, 0, 1, 0, 0, 0, 1, 1},
+    {1, 0, 0, 0, 1, 0, 1, 1, 1, 0},
+    {0, 1, 1, 1, 0, 0, 1, 1, 0, 0},
+    {0, 1, 0, 1, 0, 1, 1, 0, 0, 1},
+    {1, 0, 0, 0, 1, 1, 1, 0, 0, 0},
+    {1, 1, 0, 0, 0, 1, 0, 1, 1, 1},
+    {0, 0, 1, 0, 1, 0, 0, 0, 1, 1},
+    {1, 0, 0, 1, 1, 0, 0, 1, 0, 0}
+};
+
+struct ThreadArgs{
+int chunk_num;
+int (*board)[COLS];
+};
+
+// function that each thread will execute
+void* apply_rules(void* arg) {
+   struct ThreadArgs* thread_args = arg;
+    int chunk_num = thread_args->chunk_num;
+    int (*board)[COLS] = thread_args->board;
+    int start_row = chunk_num * CHUNK_SIZE;
+    int end_row = (chunk_num + 1) * CHUNK_SIZE;
+    if (end_row > ROWS){
+     end_row = 10;
+     }
+    // loop over the chunk of the matrix and count neighbors for each cell
+    for (int i = start_row; i < end_row; i++) {
+        for (int j = 0; j < COLS; j++) {
+            // update the cell based on the number of neighbors
+            update_board(board, i, j);
+        }
+    }
+    pthread_exit(NULL);
+}
+
+
+// for printing board or array
+void print_board(int board[][10]) {
+    for (int i = 0; i < 10; i++) {
+        for (int j = 0; j < 10; j++) {
             printf("%d ", board[i][j]);
         }
         printf("\n");
     }
     printf("\n");
 }
-// This function counts the neighbors
-// Some conditions to check if the row , col is in bounds
-// returns count which is basically the number of neighbors alive or labelled as one in matrix
-int count_neighbors(int board[][10], int row, int col) {
-	int ROWS = 10;
-	int COLS = 10;
+
+// to count neighbor of a cell
+int count_neighbors(int (*board)[10], int row, int col) {
     int count = 0;
     for (int i = row - 1; i <= row + 1; i++) {
         for (int j = col - 1; j <= col + 1; j++) {
@@ -48,9 +84,9 @@ int count_neighbors(int board[][10], int row, int col) {
     }
     return count;
 }
-// This function uses count_neighbors functions to count the neighbour of a particular cell and apply the needed operation to it
-void update_board(int board[][COLS], int rows, int cols) {
-    int new_board[ROWS][COLS];
+// for applying rules of conway for a cell
+void update_board(int (*board)[COLS], int rows, int cols) {
+    int (*new_board)[COLS];
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {
             int neighbors = count_neighbors(board, i, j);
@@ -70,58 +106,90 @@ void update_board(int board[][COLS], int rows, int cols) {
     }
 }
 
-int main(int argc, char const *argv[])
-{
-	//share memory
+int main() {
+int rc = 10;
+int cc = 10;
     int shmid;
+    pthread_t threads[NUM_THREADS];
+    struct ThreadArgs thread_args[NUM_THREADS];
     key_t key = IPC_PRIVATE;
-    int (*board)[COLS];
-	// creating shared memory
-    shmid = shmget(key, ROWS * COLS * sizeof(int), IPC_CREAT | 0666);
-    if (shmid < 0) {
-        perror("shmget");
+    int (*board)[cc];
+    
+        // Open the file for writing
+    FILE *fp = fopen("matrix.txt", "w");
+    if (fp == NULL) {
+        perror("fopen");
+        return 1;
+    }
+
+    // Write the matrix to the file
+    for (int i = 0; i < rc; i++) {
+        for (int j = 0; j < cc; j++) {
+            fprintf(fp, "%d ", matrix[i][j]);
+        }
+        fprintf(fp, "\n");
+    }
+
+    // Close the file
+    fclose(fp);
+    
+    // Open the file for reading
+    FILE *fp2 = fopen("matrix.txt", "r");
+    if (fp2 == NULL) {
+        perror("fopen");
         exit(1);
     }
-	// assigning memory block to it
+
+    // Read the matrix from the file into a two-dimensional array
+    int matrixx[rc][cc];
+    for (int i = 0; i < rc; i++) {
+        for (int j = 0; j < cc; j++) {
+            fscanf(fp, "%d", &matrixx[i][j]);
+        }
+    }
+
+    // Close the file
+    fclose(fp2);
+    
+        shmid = shmget(key, rc * cc * sizeof(int), IPC_CREAT | 0666);
+	    if (shmid < 0) {
+	        perror("shmget");
+	        exit(1);
+	    }
+
+    // Create a shared memory segment to hold the matrix
     board = shmat(shmid, NULL, 0);
-    if (board == (int (*)[]) -1) {
-        perror("shmat");
-        exit(1);
+	    if (board == (int (*)[]) -1) {
+	        perror("shmat");
+	        exit(1);
+	    }
+	
+	    // Initialize the board
+	    for (int i = 0; i < rc; i++) {
+	        for (int j = 0; j < cc; j++) {
+	            board[i][j] = matrixx[i][j];
+	        }
+	    }
+	
+ 	for (int i = 0; i < NUM_THREADS; i++) {
+          thread_args[i].chunk_num = i;
+         thread_args[i].board = board;
+        pthread_create(&threads[i], NULL, apply_rules, &thread_args[i]);
     }
 
-    // Initialize the board
-    for (int i = 0; i < ROWS; i++) {
-        for (int j = 0; j < COLS; j++) {
-            board[i][j] = rand() % 2;
-        }
+    // wait for all threads to finish
+    for (int i = 0; i < NUM_THREADS; i++) {
+
+        pthread_join(threads[i], NULL);
     }
 
-    int pid;
-    int status;
+	
+	print_board(board);
+	
+	shmdt(board);
+	shmctl(shmid, IPC_RMID, NULL);
+	
+	return 0;
 
-    for (int i = 0; i < 10; i++) {
-        pid = fork();
-        if (pid == 0) {
-            int start_row = i * ROWS / 10;
-            int end_row = (i + 1) * ROWS / 10;
-            for (int j = 0; j < 100; j++) {
-            update_board(board, end_row - start_row, COLS);
-        }
-        exit(0);
-    } else if (pid < 0) {
-        perror("fork");
-        exit(1);
-    }
 }
 
-for (int i = 0; i < 10; i++) {
-    wait(&status);
-}
-
-print_board(board, ROWS, COLS);
-
-shmdt(board);
-shmctl(shmid, IPC_RMID, NULL);
-
-return 0;
-}
