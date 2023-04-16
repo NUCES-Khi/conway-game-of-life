@@ -32,33 +32,7 @@ int matrix[][10] = {
     {1, 0, 0, 1, 1, 0, 0, 1, 0, 0}
 };
 
-struct ThreadArgs{
-int chunk_num;
-int (*board)[COLS];
-};
 
-// function that each thread will execute
-void* apply_rules(void* arg) {
-   struct ThreadArgs* thread_args = arg;
-    int chunk_num = thread_args->chunk_num;
-    int (*board)[COLS] = thread_args->board;
-    int start_row = chunk_num * CHUNK_SIZE;
-    int end_row = (chunk_num + 1) * CHUNK_SIZE;
-    if (end_row > ROWS){
-     end_row = 10;
-     }
-    // loop over the chunk of the matrix and count neighbors for each cell
-    for (int i = start_row; i < end_row; i++) {
-        for (int j = 0; j < COLS; j++) {
-            // update the cell based on the number of neighbors
-            update_board(board, i, j);
-        }
-    }
-    pthread_exit(NULL);
-}
-
-
-// for printing board or array
 void print_board(int board[][10]) {
     for (int i = 0; i < 10; i++) {
         for (int j = 0; j < 10; j++) {
@@ -69,7 +43,7 @@ void print_board(int board[][10]) {
     printf("\n");
 }
 
-// to count neighbor of a cell
+
 int count_neighbors(int (*board)[10], int row, int col) {
     int count = 0;
     for (int i = row - 1; i <= row + 1; i++) {
@@ -84,9 +58,8 @@ int count_neighbors(int (*board)[10], int row, int col) {
     }
     return count;
 }
-// for applying rules of conway for a cell
-void update_board(int (*board)[COLS], int rows, int cols) {
-    int (*new_board)[COLS];
+
+void update_board(int (*board)[COLS], int (*new_board)[COLS], int rows, int cols) {
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {
             int neighbors = count_neighbors(board, i, j);
@@ -106,14 +79,13 @@ void update_board(int (*board)[COLS], int rows, int cols) {
     }
 }
 
+
 int main() {
 int rc = 10;
 int cc = 10;
-    int shmid;
-    pthread_t threads[NUM_THREADS];
-    struct ThreadArgs thread_args[NUM_THREADS];
-    key_t key = IPC_PRIVATE;
-    int (*board)[cc];
+
+
+
     
         // Open the file for writing
     FILE *fp = fopen("matrix.txt", "w");
@@ -151,45 +123,83 @@ int cc = 10;
     // Close the file
     fclose(fp2);
     
-        shmid = shmget(key, rc * cc * sizeof(int), IPC_CREAT | 0666);
-	    if (shmid < 0) {
-	        perror("shmget");
-	        exit(1);
-	    }
+         int shmid;
+    key_t key = IPC_PRIVATE;
+    int (*board)[COLS];
 
-    // Create a shared memory segment to hold the matrix
+    shmid = shmget(key, ROWS * COLS * sizeof(int), IPC_CREAT | 0666);
+    if (shmid < 0) {
+        perror("shmget");
+        exit(1);
+    }
+
     board = shmat(shmid, NULL, 0);
-	    if (board == (int (*)[]) -1) {
-	        perror("shmat");
-	        exit(1);
-	    }
-	
-	    // Initialize the board
-	    for (int i = 0; i < rc; i++) {
-	        for (int j = 0; j < cc; j++) {
-	            board[i][j] = matrixx[i][j];
-	        }
-	    }
-	
- 	for (int i = 0; i < NUM_THREADS; i++) {
-          thread_args[i].chunk_num = i;
-         thread_args[i].board = board;
-        pthread_create(&threads[i], NULL, apply_rules, &thread_args[i]);
+    if (board == (int (*)[]) -1) {
+        perror("shmat");
+        exit(1);
     }
 
-    // wait for all threads to finish
-    for (int i = 0; i < NUM_THREADS; i++) {
-
-        pthread_join(threads[i], NULL);
+    // Initialize the board
+    for (int i = 0; i < ROWS; i++) {
+        for (int j = 0; j < COLS; j++) {
+            board[i][j] = rand() % 2;
+        }
     }
 
-	
-	print_board(board);
-	
-	shmdt(board);
-	shmctl(shmid, IPC_RMID, NULL);
-	
-	return 0;
+    int pid;
+    int status;
+
+int new_board[ROWS][COLS];
+int count = 1;
+int num_processes = 4;
+for (int k = 0; k < 10; k++){
+for (int i = 0; i < num_processes; i++) {
+        pid = fork();
+
+        if (pid == -1) {
+            // Error handling
+            perror("fork");
+            exit(1);
+        } 
+        else if (pid == 0) {
+        int start_row = i * 10 / num_processes;
+            int end_row = (i + 1) * 10 / num_processes;
+
+ for (int j = 0; j < 100; j++) {
+                // Update 25 cells in each iteration
+                for (int k = start_row; k < end_row; k++) {
+                    for (int l = 0; l < COLS && (k * COLS + l) < ((i + 1) * 25); l++) {
+                        update_board(board, new_board, k, l);
+                        
+                    }
+                }
+                // Wait for all child processes to finish updating the board
+                wait(NULL);
+            }
+                        exit(0);
+        }
+    }
+    print_board(board);
+    }
+    
+
+    // Parent process
+    for (int i = 0; i < num_processes; i++) {
+        // Wait for all child processes to finish
+        wait(NULL);
+    }
+
+
+for (int i = 0; i < 10; i++) {
+    wait(&status);
+}
+
+
+shmdt(board);
+shmctl(shmid, IPC_RMID, NULL);
+
+return 0;
 
 }
+
 
