@@ -1,8 +1,4 @@
 /**
- * @defgroup   MAIN main
- *
- * @brief      This file implements main. Please Comment you code
- *
  * @author     21k-3079 Rayyan Ahmed
  * @date       2023
  */
