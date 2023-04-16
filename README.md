@@ -87,5 +87,7 @@ int main() {
 
 
 ## Screenshots
-![/home/rayyan3079/Pictures/Screenshots/Screenshot from 2023-04-16 13-41-24.png]() 
+![image](https://user-images.githubusercontent.com/124567636/232287439-822ba1e7-1182-4a52-af8f-366e2f81d90e.png)
+![image](https://user-images.githubusercontent.com/124567636/232287469-7992d93b-0343-409d-9582-729444d1883f.png)
+![image](https://user-images.githubusercontent.com/124567636/232287492-ed6beb7e-5fcf-410d-9081-8dd725e35499.png)
 
